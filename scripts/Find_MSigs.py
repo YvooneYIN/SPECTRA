@@ -366,6 +366,6 @@ def main(args):
         Msigs[phenotype] = feature_rank.index[:N]
     
   
-  df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in Msigs.items()]))
-  return df
+	df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in Msigs.items()]))
+  	return df
 
