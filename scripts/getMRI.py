@@ -266,12 +266,19 @@ def main(args):
 	Y = Y.loc[:,['phenotype']]
 	X_train,X_test,Y_train,Y_test = train_test_split(X,Y,test_size=0.3,random_state=42,stratify=Y['phenotype'])
 	X_val,X_test,Y_val,Y_test = train_test_split(X_test,Y_test,test_size=0.5,random_state=42,stratify=Y_test['phenotype'])
-	test_scores_df = pd.DataFrame()
+	os.makedirs(args.Output, exist_ok=True)
+	selected_dir = os.path.join(args.Output, 'Selected_MSig')
+	os.makedirs(selected_dir, exist_ok=True)
+	
 	phenotypes = np.unique(Y_train['phenotype'])
 	for phenotype in phenotypes:
 		msig_rank = pd.read_csv(f'{args.RankPath}/{phenotype}_result.csv', index_col=0)
 		rf = RandomForestClassifier(oob_score=True, class_weight='balanced', random_state=42)  
-		fold_results,cv_Ns,cv_scores_df = select_MSig_panel_size_cv(X_train, Y_train,msig_rank,phenotype,rf,range(10,11))
+		_,cv_Ns,cv_scores_df = select_MSig_panel_size_cv(X_train, Y_train,msig_rank,phenotype,rf,range(10,11))
+		if len(cv_Ns) == 0:
+            print(f"[Warning] No suitable MSig panel size for {phenotype} in CV. Skip.")
+            continue
+		cv_Ns = np.unique(cv_Ns)
 		cv_scores_df['N'] = cv_scores_df.index
 		cv_scores_df.to_csv(os.path.join(f'{args.Output}','1CV',f'{phenotype}_res.csv'))
 		
@@ -279,20 +286,20 @@ def main(args):
 		cv_Ns = np.unique(satisfied_df.index)
 
 		Y_train_ohe = pd.get_dummies(Y_train['phenotype'])
-		val_results,sorted_Ns,val_scores_df = validate_MSig_panel_size(X_train,X_val,Y_train_ohe,Y_val,msig_rank,phenotype,rf,cv_Ns)
+		_,sorted_Ns,val_scores_df = validate_MSig_panel_size(X_train,X_val,Y_train_ohe,Y_val,msig_rank,phenotype,rf,cv_Ns)
 		val_scores_df.to_csv(os.path.join(f'{args.Output}','2Validation',f'{phenotype}_res.csv'))
-		
+		if sorted_Ns.empty:
+            print(f"[Warning] No valid MSig panel size for {phenotype} in validation. Skip.")
+            continue
 		#internal test
 		best_N = sorted_Ns.index[0]
-		scores_phenotype_df,pvals = compute_MRI_using_MSig_panel(X_train,X_test,Y_train_ohe,Y_test,msig_rank,best_N,phenotype,rf)
-		scores_phenotype_df['target'] = scores_phenotype_df['phenotype'].apply(lambda x:1 if x == phenotype else 0)
-		scores_phenotype_df.to_csv(os.path.join(f'{args.Output}','3Test',f'{phenotype}_probs.csv'))
-		
-		scores = scoring(scores_phenotype_df["scores"],scores_phenotype_df['target'])
-		test_scores = pd.DataFrame(scores,index = [best_N])
-		test_scores.to_csv(os.path.join(f'{args.Output}','3Test',f'{phenotype}_res.csv'))
-		test_scores_df = pd.concat([test_scores_df,test_scores],axis = 0)
-	test_scores_df.to_csv(os.path.join(f'{args.Output}','3Test',f'summary_test.csv'))
+		selected_msig = msig_rank.index[:best_N]
+		selected_df = pd.DataFrame({
+            'phenotype': phenotype,
+            'MSig': selected_msig
+        })
+		out_path = os.path.join(selected_dir, f"{phenotype}_MSig_panel.csv")
+		selected_df.to_csv(out_path, index=False)
 
 
 
